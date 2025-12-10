@@ -166,7 +166,7 @@ use frame_support::{
 		tokens::{
 			fungible, BalanceStatus as Status, DepositConsequence, Fortitude,
 			Fortitude::{Force, Polite},
-			IdAmount,
+			FundingSink, IdAmount,
 			Preservation::{Expendable, Preserve, Protect},
 			WithdrawConsequence,
 		},
@@ -186,6 +186,7 @@ use sp_runtime::{
 	ArithmeticError, DispatchError, FixedPointOperand, Perbill, TokenError,
 };
 
+pub use frame_support::traits::tokens::DirectBurn;
 pub use types::{
 	AccountData, AdjustmentDirection, BalanceLock, DustCleaner, ExtraFlags, Reasons, ReserveData,
 };
@@ -249,6 +250,7 @@ pub mod pallet {
 
 			type WeightInfo = ();
 			type DoneSlashHandler = ();
+			type BurnDestination = ();
 		}
 	}
 
@@ -337,6 +339,19 @@ pub mod pallet {
 			Self::AccountId,
 			Self::Balance,
 		>;
+
+		/// Handler for user and pallet-initiated burns.
+		///
+		/// Runtimes can configure this to redirect burned funds to a buffer account
+		/// (e.g., DAP buffer on Asset Hub) or burn them directly.
+		///
+		/// - DAP-enabled runtimes on AssetHub: `type BurnDestination =
+		///   pallet_dap::ReturnToDap<Runtime>;`
+		/// - DAP satellite runtimes: `type BurnDestination =
+		///   pallet_dap_satellite::AccumulateInSatellite<Runtime>;`
+		/// - Other runtimes: `type BurnDestination = DirectBurn<Runtime>;`
+		#[pallet::no_default_bounds]
+		type BurnDestination: FundingSink<Self::AccountId, Self::Balance>;
 	}
 
 	/// The in-code storage version.
@@ -856,7 +871,9 @@ pub mod pallet {
 		/// If the origin's account ends up below the existential deposit as a result
 		/// of the burn and `keep_alive` is false, the account will be reaped.
 		///
-		/// Currently burns directly, reducing total issuance.
+		/// The behavior depends on the runtime's `BurnDestination` configuration:
+		/// - DAP-enabled runtimes: funds are transferred to the DAP buffer
+		/// - Other runtimes: funds are burned directly, reducing total issuance
 		#[pallet::call_index(10)]
 		#[pallet::weight(if *keep_alive {T::WeightInfo::burn_allow_death() } else {T::WeightInfo::burn_keep_alive()})]
 		pub fn burn(
@@ -867,13 +884,7 @@ pub mod pallet {
 			let source = ensure_signed(origin)?;
 			let preservation =
 				if keep_alive { Preservation::Preserve } else { Preservation::Expendable };
-			<Self as fungible::Mutate<_>>::burn_from(
-				&source,
-				value,
-				preservation,
-				Precision::Exact,
-				Fortitude::Polite,
-			)?;
+			T::BurnDestination::fill(&source, value, preservation);
 			Ok(())
 		}
 	}
