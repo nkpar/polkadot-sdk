@@ -26,6 +26,28 @@
 
 use crate::traits::tokens::{fungible, Fortitude, Precision, Preservation};
 use core::marker::PhantomData;
+use sp_runtime::Saturating;
+
+/// Trait for handling burned funds.
+///
+/// This trait is used by `pallet_balances::burn_from` to handle funds after they have been
+/// removed from the source account. Implementations can either:
+/// - Reduce total issuance (traditional burning)
+/// - Credit to a buffer account (DAP-style systems)
+///
+/// The key distinction from `FundingSink::fill` is that `on_burned` is called AFTER
+/// the funds have already been removed from the source account via `decrease_balance`.
+pub trait BurnHandler<AccountId, Balance> {
+	/// Handle funds that have been burned from an account.
+	///
+	/// Called by `burn_from` after the source account's balance has been decreased.
+	/// The implementation should either:
+	/// - Reduce total issuance (for actual burning)
+	/// - Credit the amount to a buffer account (for DAP systems)
+	///
+	/// This operation is infallible.
+	fn on_burned(who: &AccountId, amount: Balance);
+}
 
 /// Trait for moving funds into an issuance buffer or burning them.
 ///
@@ -33,7 +55,7 @@ use core::marker::PhantomData;
 /// This trait is infallible - implementations must handle any errors internally.
 ///
 /// Pairs with future `FundingSource::drain()` for withdrawing from the buffer.
-pub trait FundingSink<AccountId, Balance> {
+pub trait FundingSink<AccountId, Balance>: BurnHandler<AccountId, Balance> {
 	/// Fill the sink with funds from the given account.
 	///
 	/// This could mean burning the funds or transferring them to a buffer account.
@@ -47,21 +69,33 @@ pub trait FundingSink<AccountId, Balance> {
 	fn fill(from: &AccountId, amount: Balance, preservation: Preservation);
 }
 
-/// Direct burning implementation of `FundingSink`.
+/// Direct burning implementation of `BurnHandler` and `FundingSink`.
 ///
 /// This implementation burns tokens directly, reducing total issuance.
 /// Used for traditional burn systems (e.g., Kusama).
 ///
 /// # Type Parameters
 ///
-/// * `Currency` - The currency type that implements `Mutate`
+/// * `Currency` - The currency type that implements `Mutate` and `Unbalanced`
 /// * `AccountId` - The account identifier type
 pub struct DirectBurn<Currency, AccountId>(PhantomData<(Currency, AccountId)>);
+
+impl<Currency, AccountId> BurnHandler<AccountId, Currency::Balance>
+	for DirectBurn<Currency, AccountId>
+where
+	Currency: fungible::Unbalanced<AccountId>,
+	AccountId: Eq,
+{
+	fn on_burned(_who: &AccountId, amount: Currency::Balance) {
+		// Reduce total issuance - funds are permanently destroyed
+		Currency::set_total_issuance(Currency::total_issuance().saturating_sub(amount));
+	}
+}
 
 impl<Currency, AccountId> FundingSink<AccountId, Currency::Balance>
 	for DirectBurn<Currency, AccountId>
 where
-	Currency: fungible::Mutate<AccountId>,
+	Currency: fungible::Mutate<AccountId> + fungible::Unbalanced<AccountId>,
 	AccountId: Eq,
 {
 	fn fill(from: &AccountId, amount: Currency::Balance, preservation: Preservation) {
@@ -70,6 +104,11 @@ where
 		let _ =
 			Currency::burn_from(from, amount, preservation, Precision::Exact, Fortitude::Polite);
 	}
+}
+
+/// No-op implementation of `BurnHandler` for unit type.
+impl<AccountId, Balance> BurnHandler<AccountId, Balance> for () {
+	fn on_burned(_who: &AccountId, _amount: Balance) {}
 }
 
 /// No-op implementation of `FundingSink` for unit type.

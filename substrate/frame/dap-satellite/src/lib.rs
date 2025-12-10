@@ -83,8 +83,8 @@ extern crate alloc;
 use frame_support::{
 	pallet_prelude::*,
 	traits::{
-		fungible::{Balanced, Credit, Inspect, Mutate},
-		tokens::{Fortitude, FundingSink, Precision, Preservation},
+		fungible::{Balanced, Credit, Inspect, Mutate, Unbalanced},
+		tokens::{BurnHandler, Fortitude, FundingSink, Precision, Preservation},
 		Currency, Imbalance, OnUnbalanced,
 	},
 	PalletId,
@@ -116,6 +116,7 @@ pub mod pallet {
 		/// The currency type.
 		type Currency: Inspect<Self::AccountId>
 			+ Mutate<Self::AccountId>
+			+ Unbalanced<Self::AccountId>
 			+ Balanced<Self::AccountId>;
 
 		/// The pallet ID used to derive the satellite account.
@@ -197,6 +198,24 @@ pub mod pallet {
 /// }
 /// ```
 pub struct AccumulateInSatellite<T>(core::marker::PhantomData<T>);
+
+impl<T: Config> BurnHandler<T::AccountId, BalanceOf<T>> for AccumulateInSatellite<T> {
+	fn on_burned(who: &T::AccountId, amount: BalanceOf<T>) {
+		let satellite = Pallet::<T>::satellite_account();
+
+		// Credit the satellite account. The source account's balance has already been decreased
+		// by `burn_from` before this is called. We use `increase_balance` which doesn't affect
+		// total issuance (keeping total issuance unchanged = funds preserved, not destroyed).
+		let _ = T::Currency::increase_balance(&satellite, amount, Precision::BestEffort);
+
+		Pallet::<T>::deposit_event(Event::FundsAccumulated { from: who.clone(), amount });
+
+		log::debug!(
+			target: LOG_TARGET,
+			"Redirected burn of {amount:?} from {who:?} to satellite account"
+		);
+	}
+}
 
 impl<T: Config> FundingSink<T::AccountId, BalanceOf<T>> for AccumulateInSatellite<T> {
 	fn fill(source: &T::AccountId, amount: BalanceOf<T>, preservation: Preservation) {

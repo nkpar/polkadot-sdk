@@ -20,11 +20,13 @@ use super::*;
 use frame_support::traits::{
 	tokens::{
 		Fortitude,
+		Precision::{self, BestEffort},
 		Preservation::{self, Preserve, Protect},
 		Provenance::{self, Minted},
 	},
 	AccountTouch,
 };
+use sp_runtime::{ArithmeticError, TokenError};
 
 impl<T: Config<I>, I: 'static> fungible::Inspect<T::AccountId> for Pallet<T, I> {
 	type Balance = T::Balance;
@@ -189,6 +191,25 @@ impl<T: Config<I>, I: 'static> fungible::Unbalanced<T::AccountId> for Pallet<T, 
 }
 
 impl<T: Config<I>, I: 'static> fungible::Mutate<T::AccountId> for Pallet<T, I> {
+	fn burn_from(
+		who: &T::AccountId,
+		amount: Self::Balance,
+		preservation: Preservation,
+		precision: Precision,
+		force: Fortitude,
+	) -> Result<Self::Balance, DispatchError> {
+		use fungible::{Inspect, Unbalanced};
+		let actual = Self::reducible_balance(who, preservation, force).min(amount);
+		ensure!(actual == amount || precision == BestEffort, TokenError::FundsUnavailable);
+		Self::total_issuance().checked_sub(&actual).ok_or(ArithmeticError::Overflow)?;
+		let actual = Self::decrease_balance(who, actual, BestEffort, preservation, force)?;
+		// Use configurable handler instead of directly reducing total issuance.
+		// For DirectBurn: reduces total issuance (traditional burning)
+		// For DAP satellite: credits buffer account (tokens preserved)
+		T::BurnDestination::on_burned(who, actual);
+		Self::done_burn_from(who, actual);
+		Ok(actual)
+	}
 	fn done_mint_into(who: &T::AccountId, amount: Self::Balance) {
 		Self::deposit_event(Event::<T, I>::Minted { who: who.clone(), amount });
 	}

@@ -164,9 +164,9 @@ use frame_support::{
 	pallet_prelude::DispatchResult,
 	traits::{
 		tokens::{
-			fungible, BalanceStatus as Status, DepositConsequence, Fortitude,
-			Fortitude::{Force, Polite},
-			FundingSink, IdAmount,
+			fungible, BalanceStatus as Status, BurnHandler, DepositConsequence,
+			Fortitude::{self, Force, Polite},
+			IdAmount,
 			Preservation::{Expendable, Preserve, Protect},
 			WithdrawConsequence,
 		},
@@ -340,18 +340,20 @@ pub mod pallet {
 			Self::Balance,
 		>;
 
-		/// Handler for user and pallet-initiated burns.
+		/// Handler for burned funds.
 		///
-		/// Runtimes can configure this to redirect burned funds to a buffer account
-		/// (e.g., DAP buffer on Asset Hub) or burn them directly.
+		/// This is called by `burn_from` after the source account's balance has been decreased.
+		/// Runtimes can configure this to either:
+		/// - Reduce total issuance (traditional burning)
+		/// - Credit to a buffer account (DAP-style systems)
 		///
 		/// - DAP-enabled runtimes on AssetHub: `type BurnDestination =
 		///   pallet_dap::ReturnToDap<Runtime>;`
 		/// - DAP satellite runtimes: `type BurnDestination =
 		///   pallet_dap_satellite::AccumulateInSatellite<Runtime>;`
-		/// - Other runtimes: `type BurnDestination = DirectBurn<Runtime>;`
+		/// - Other runtimes: `type BurnDestination = DirectBurn<Balances, AccountId>;`
 		#[pallet::no_default_bounds]
-		type BurnDestination: FundingSink<Self::AccountId, Self::Balance>;
+		type BurnDestination: BurnHandler<Self::AccountId, Self::Balance>;
 	}
 
 	/// The in-code storage version.
@@ -884,16 +886,13 @@ pub mod pallet {
 			let source = ensure_signed(origin)?;
 			let preservation =
 				if keep_alive { Preservation::Preserve } else { Preservation::Expendable };
-
-			// Check that the user has sufficient reducible balance
-			let reducible = <Self as fungible::Inspect<_>>::reducible_balance(
+			<Self as fungible::Mutate<_>>::burn_from(
 				&source,
+				value,
 				preservation,
+				Precision::Exact,
 				Fortitude::Polite,
-			);
-			ensure!(reducible >= value, TokenError::FundsUnavailable);
-
-			T::BurnDestination::fill(&source, value, preservation);
+			)?;
 			Ok(())
 		}
 	}

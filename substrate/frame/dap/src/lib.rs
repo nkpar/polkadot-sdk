@@ -33,8 +33,8 @@ extern crate alloc;
 use frame_support::{
 	pallet_prelude::*,
 	traits::{
-		fungible::{Balanced, Credit, Inspect, Mutate},
-		tokens::{Fortitude, FundingSink, Precision, Preservation},
+		fungible::{Balanced, Credit, Inspect, Mutate, Unbalanced},
+		tokens::{BurnHandler, Fortitude, FundingSink, Precision, Preservation},
 		Currency, Imbalance, OnUnbalanced,
 	},
 	PalletId,
@@ -66,6 +66,7 @@ pub mod pallet {
 		/// The currency type.
 		type Currency: Inspect<Self::AccountId>
 			+ Mutate<Self::AccountId>
+			+ Unbalanced<Self::AccountId>
 			+ Balanced<Self::AccountId>;
 
 		/// The pallet ID used to derive the buffer account.
@@ -134,9 +135,27 @@ pub mod pallet {
 	}
 }
 
-/// Implementation of FundingSink that fills the DAP buffer.
+/// Implementation of BurnHandler and FundingSink that fills the DAP buffer.
 /// Funds are transferred to the buffer account instead of being burned.
 pub struct ReturnToDap<T>(core::marker::PhantomData<T>);
+
+impl<T: Config> BurnHandler<T::AccountId, BalanceOf<T>> for ReturnToDap<T> {
+	fn on_burned(who: &T::AccountId, amount: BalanceOf<T>) {
+		let buffer = Pallet::<T>::buffer_account();
+
+		// Credit the buffer account. The source account's balance has already been decreased
+		// by `burn_from` before this is called. We use `increase_balance` which doesn't affect
+		// total issuance (keeping total issuance unchanged = funds preserved, not destroyed).
+		let _ = T::Currency::increase_balance(&buffer, amount, Precision::BestEffort);
+
+		Pallet::<T>::deposit_event(Event::FundsReturned { from: who.clone(), amount });
+
+		log::debug!(
+			target: LOG_TARGET,
+			"Redirected burn of {amount:?} from {who:?} to DAP buffer"
+		);
+	}
+}
 
 impl<T: Config> FundingSink<T::AccountId, BalanceOf<T>> for ReturnToDap<T> {
 	fn fill(source: &T::AccountId, amount: BalanceOf<T>, preservation: Preservation) {
