@@ -494,6 +494,65 @@ mod tests {
 		});
 	}
 
+	#[test]
+	fn fill_with_zero_amount_succeeds() {
+		new_test_ext().execute_with(|| {
+			let satellite = DapSatellite::satellite_account();
+
+			// Given: account 1 has 100, satellite has 0
+			assert_eq!(Balances::free_balance(1), 100);
+			assert_eq!(Balances::free_balance(satellite), 0);
+
+			// When: fill 0 from account 1
+			AccumulateInSatellite::<Test>::fill(&1, 0, Preservation::Preserve);
+
+			// Then: balances unchanged (no-op)
+			assert_eq!(Balances::free_balance(1), 100);
+			assert_eq!(Balances::free_balance(satellite), 0);
+		});
+	}
+
+	#[test]
+	fn fill_with_expendable_allows_full_drain() {
+		new_test_ext().execute_with(|| {
+			System::set_block_number(1);
+			let satellite = DapSatellite::satellite_account();
+
+			// Given: account 1 has 100
+			assert_eq!(Balances::free_balance(1), 100);
+
+			// When: fill full balance with Expendable (allows going to 0)
+			AccumulateInSatellite::<Test>::fill(&1, 100, Preservation::Expendable);
+
+			// Then: account 1 is empty, satellite has 100
+			assert_eq!(Balances::free_balance(1), 0);
+			assert_eq!(Balances::free_balance(satellite), 100);
+		});
+	}
+
+	#[test]
+	fn fill_with_preserve_respects_existential_deposit() {
+		new_test_ext().execute_with(|| {
+			let satellite = DapSatellite::satellite_account();
+
+			// Given: account 1 has 100, ED is 1 (from TestDefaultConfig)
+			assert_eq!(Balances::free_balance(1), 100);
+			assert_eq!(Balances::free_balance(satellite), 0);
+
+			// When: try to fill 100 with Preserve (would go below ED)
+			AccumulateInSatellite::<Test>::fill(&1, 100, Preservation::Preserve);
+
+			// Then: balances unchanged (infallible - would have killed account)
+			assert_eq!(Balances::free_balance(1), 100);
+			assert_eq!(Balances::free_balance(satellite), 0);
+
+			// But filling 99 works (leaves 1 for ED)
+			AccumulateInSatellite::<Test>::fill(&1, 99, Preservation::Preserve);
+			assert_eq!(Balances::free_balance(1), 1);
+			assert_eq!(Balances::free_balance(satellite), 99);
+		});
+	}
+
 	// ===== SlashToSatellite tests =====
 
 	#[test]
@@ -516,6 +575,23 @@ mod tests {
 
 			// Then: satellite has accumulated all slashes (30 + 20 + 50 = 100)
 			assert_eq!(Balances::free_balance(satellite), 100);
+		});
+	}
+
+	#[test]
+	fn slash_to_satellite_handles_zero_amount() {
+		new_test_ext().execute_with(|| {
+			let satellite = DapSatellite::satellite_account();
+
+			// Given: satellite has 0
+			assert_eq!(Balances::free_balance(satellite), 0);
+
+			// When: slash with zero amount
+			let credit = <Balances as Balanced<u64>>::issue(0);
+			SlashToSatellite::<Test>::on_unbalanced(credit);
+
+			// Then: satellite still has 0 (no-op)
+			assert_eq!(Balances::free_balance(satellite), 0);
 		});
 	}
 
