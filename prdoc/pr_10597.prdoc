@@ -1,0 +1,84 @@
+title: 'Introduce pallet-dap-satellite for system chain fund collection'
+doc:
+- audience: Runtime Dev
+  description: |-
+    This PR introduces pallet-dap-satellite, allowing system chains different from AssetHub
+    to collect funds (to be periodically sent to DAP on AssetHub in future PRs) instead of
+    burning them directly.
+
+    **Changes:**
+
+    - **pallet-dap-satellite**: New pallet that implements `FundingSink` by accumulating funds
+      in a satellite account.
+
+    - **[breaking change] pallet-balances**: `BurnDestination` is now a required config item,
+      allowing each runtime to choose whether user-initiated burns lead to direct burning or
+      redirecting to a buffer. Runtimes must explicitly configure this:
+      - Non-DAP runtimes should use `pallet_balances::DirectBurn<Balances, AccountId>`
+      - DAP-integrated runtimes use `pallet_dap::ReturnToDap<Runtime>` (on AssetHub) or
+        `pallet_dap_satellite::AccumulateInSatellite<Runtime>` (on other system chains)
+
+    **Runtime integrations:**
+
+    - User-initiated burns redirect to DAP for asset-hub-westend
+    - User-initiated burns redirect to DAP satellite for: westend (relay chain),
+      bridge-hub-westend, collectives-westend, coretime-westend, people-westend
+    - Remaining runtimes (rococo ecosystem, test runtimes) use `DirectBurn` which burns
+      tokens directly
+crates:
+- name: frame-support
+  bump: minor
+- name: pallet-balances
+  bump: major
+- name: pallet-dap-satellite
+  bump: patch
+- name: polkadot-sdk
+  bump: minor
+- name: asset-hub-westend-runtime
+  bump: major
+- name: westend-runtime
+  bump: major
+- name: bridge-hub-westend-runtime
+  bump: major
+- name: collectives-westend-runtime
+  bump: major
+- name: coretime-westend-runtime
+  bump: major
+- name: people-westend-runtime
+  bump: major
+- name: rococo-runtime
+  bump: minor
+- name: asset-hub-rococo-runtime
+  bump: minor
+- name: bridge-hub-rococo-runtime
+  bump: minor
+- name: people-rococo-runtime
+  bump: minor
+- name: coretime-rococo-runtime
+  bump: minor
+- name: kitchensink-runtime
+  bump: major
+- name: polkadot-test-runtime
+  bump: major
+- name: cumulus-test-runtime
+  bump: major
+- name: rococo-parachain-runtime
+  bump: minor
+- name: penpal-runtime
+  bump: minor
+- name: yet-another-parachain-runtime
+  bump: minor
+- name: pallet-asset-rewards
+  bump: patch
+- name: pallet-assets-freezer
+  bump: patch
+- name: pallet-nis
+  bump: patch
+- name: pallet-contracts-mock-network
+  bump: minor
+- name: pallet-staking-async
+  bump: patch
+- name: pallet-staking-async-rc-runtime
+  bump: major
+- name: pallet-staking-async-parachain-runtime
+  bump: major
