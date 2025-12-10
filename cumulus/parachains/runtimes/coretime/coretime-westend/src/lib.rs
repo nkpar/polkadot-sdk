@@ -273,7 +273,8 @@ impl pallet_balances::Config for Runtime {
 parameter_types! {
 	/// Relay Chain `TransactionByteFee` / 10
 	pub const TransactionByteFee: Balance = MILLICENTS;
-	pub const DapSatelliteFeePercent: Perbill = Perbill::from_percent(0);
+	/// Percentage of fees to send to DAP satellite (0-100). Currently 0% - all fees go to collators.
+	pub const DapSatelliteFeePercent: u32 = 0;
 }
 
 pub type DealWithFeesSatellite =
