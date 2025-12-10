@@ -243,18 +243,13 @@ parameter_types! {
 	pub const DapSatelliteFeePercent: u32 = 0;
 }
 
-pub type DealWithFeesSatellite<R> = pallet_dap_satellite::DealWithFeesSplit<
-	R,
-	pallet_balances::Pallet<R>,
-	DapSatelliteFeePercent,
-	ToParentTreasury<WestendTreasuryAccount, LocationToAccountId, R>,
-	pallet_dap_satellite::AccumulateInSatellite<R>,
->;
+type DealWithFeesSatellite =
+	pallet_dap_satellite::DealWithFeesSplit<Runtime, DapSatelliteFeePercent, DealWithFees<Runtime>>;
 
 impl pallet_transaction_payment::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type OnChargeTransaction =
-		pallet_transaction_payment::FungibleAdapter<Balances, DealWithFeesSatellite<Runtime>>;
+		pallet_transaction_payment::FungibleAdapter<Balances, DealWithFeesSatellite>;
 	type WeightToFee = WeightToFee;
 	type LengthToFee = ConstantMultiplier<Balance, TransactionByteFee>;
 	type FeeMultiplierUpdate = SlowAdjustingFeeUpdate<Self>;

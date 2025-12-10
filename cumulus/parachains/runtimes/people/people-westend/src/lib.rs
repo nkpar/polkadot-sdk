@@ -250,15 +250,11 @@ impl pallet_balances::Config for Runtime {
 parameter_types! {
 	/// Relay Chain `TransactionByteFee` / 10.
 	pub const TransactionByteFee: Balance = MILLICENTS;
-	pub const DapSatelliteFeePercent: u8 = 0;
+	pub const DapSatelliteFeePercent: u32 = 0;
 }
 
-type DealWithFeesSatellite = pallet_dap_satellite::DealWithFeesSplit<
-	DealWithFees<Runtime>,
-	Balances,
-	DapSatellite,
-	DapSatelliteFeePercent,
->;
+type DealWithFeesSatellite =
+	pallet_dap_satellite::DealWithFeesSplit<Runtime, DapSatelliteFeePercent, DealWithFees<Runtime>>;
 
 impl pallet_transaction_payment::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;

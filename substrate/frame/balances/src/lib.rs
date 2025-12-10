@@ -884,6 +884,15 @@ pub mod pallet {
 			let source = ensure_signed(origin)?;
 			let preservation =
 				if keep_alive { Preservation::Preserve } else { Preservation::Expendable };
+
+			// Check that the user has sufficient reducible balance
+			let reducible = <Self as fungible::Inspect<_>>::reducible_balance(
+				&source,
+				preservation,
+				Fortitude::Polite,
+			);
+			ensure!(reducible >= value, TokenError::FundsUnavailable);
+
 			T::BurnDestination::fill(&source, value, preservation);
 			Ok(())
 		}
